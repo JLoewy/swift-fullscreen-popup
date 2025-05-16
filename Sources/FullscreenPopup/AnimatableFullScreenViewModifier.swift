@@ -1,5 +1,12 @@
 import SwiftUI
+
+#if canImport(UIKit)
 import UIKit
+private typealias FSPPlatformView = UIView
+#elseif canImport(AppKit)
+import AppKit
+private typealias FSPPlatformView = NSView
+#endif
 
 extension View {
     func animatableFullScreenCover(
@@ -73,7 +80,9 @@ private struct AnimatableFullScreenItemViewModifier<FullScreenContent: View, Ite
     func body(content: Content) -> some View {
         content
             .onChange(of: isUserInstructToPresentItem) { isUserInstructToPresent in
-                UIView.setAnimationsEnabled(false)
+                
+                FSPPlatformView.setAnimationsEnabled(false)
+                
                 if isUserInstructToPresent != nil {
                     if let delay {
                         Task {
@@ -90,21 +99,34 @@ private struct AnimatableFullScreenItemViewModifier<FullScreenContent: View, Ite
                     }
                 }
             }
+        #if os(macOS)
+            .sheet(item: $isActualPresented) { item in
+                fullScreenItemView(item: item)
+            }
+        #else
             .fullScreenCover(item: $isActualPresented) { item in
-                fullScreenContent(item)
-                    .background(BackgroundTransparentView())
-                    .onAppear {
-                        if !UIView.areAnimationsEnabled {
-                            UIView.setAnimationsEnabled(true)
-                            onAppear()
-                        }
-                    }
-                    .onDisappear {
-                        if !UIView.areAnimationsEnabled {
-                            UIView.setAnimationsEnabled(true)
-                            onDisappear()
-                        }
-                    }
+                fullScreenItemView(item: item)
+            }
+        #endif
+    }
+    
+    
+    private func fullScreenItemView(item: Item) -> some View {
+        fullScreenContent(item)
+            .background(BackgroundTransparentView())
+            .onAppear {
+                
+                if !FSPPlatformView.areAnimationsEnabled {
+                    FSPPlatformView.setAnimationsEnabled(true)
+                    onAppear()
+                }
+            }
+            .onDisappear {
+                
+                if !FSPPlatformView.areAnimationsEnabled {
+                    FSPPlatformView.setAnimationsEnabled(true)
+                    onDisappear()
+                }
             }
     }
 }
@@ -139,7 +161,7 @@ private struct AnimatableFullScreenViewModifier<FullScreenContent: View>: ViewMo
     func body(content: Content) -> some View {
         content
             .onChange(of: isUserInstructToPresent) { isUserInstructToPresent in
-                UIView.setAnimationsEnabled(false)
+                FSPPlatformView.setAnimationsEnabled(false)
                 if isUserInstructToPresent {
                     if let delay {
                         Task {
@@ -156,24 +178,48 @@ private struct AnimatableFullScreenViewModifier<FullScreenContent: View>: ViewMo
                     }
                 }
             }
+        #if os(macOS)
+            .sheet(isPresented: $isActualPresented) {
+                fullScreenCoverView()
+            }
+#else
             .fullScreenCover(isPresented: $isActualPresented) {
-                fullScreenContent()
-                    .background(BackgroundTransparentView())
-                    .onAppear {
-                        if !UIView.areAnimationsEnabled {
-                            UIView.setAnimationsEnabled(true)
-                            onAppear()
-                        }
-                    }
-                    .onDisappear {
-                        if !UIView.areAnimationsEnabled {
-                            UIView.setAnimationsEnabled(true)
-                            onDisappear()
-                        }
-                    }
+                fullScreenCoverView()
+            }
+        #endif
+    }
+    
+    private func fullScreenCoverView() -> some View {
+        fullScreenContent()
+            .background(BackgroundTransparentView())
+            .onAppear {
+                if !FSPPlatformView.areAnimationsEnabled {
+                    FSPPlatformView.setAnimationsEnabled(true)
+                    onAppear()
+                }
+            }
+            .onDisappear {
+                if !FSPPlatformView.areAnimationsEnabled {
+                    FSPPlatformView.setAnimationsEnabled(true)
+                    onDisappear()
+                }
             }
     }
 }
+
+#if canImport(AppKit)
+extension NSView {
+    static var areAnimationsEnabled: Bool {
+        NSAnimationContext.current.allowsImplicitAnimation
+    }
+    
+    static func setAnimationsEnabled(_ enabled: Bool) {
+        NSAnimationContext.current.allowsImplicitAnimation = enabled
+    }
+}
+#endif
+
+#if canImport(UIKit)
 
 private struct BackgroundTransparentView: UIViewRepresentable {
     func makeUIView(context _: Context) -> UIView {
@@ -189,3 +235,22 @@ private struct BackgroundTransparentView: UIViewRepresentable {
         }
     }
 }
+#elseif canImport(AppKit)
+private struct BackgroundTransparentView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView {
+        TransparentView()
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    private class TransparentView: NSView {
+        override func layout() {
+            super.layout()
+            if let grandparent = self.superview?.superview {
+                grandparent.wantsLayer = true
+                grandparent.layer?.backgroundColor = NSColor.clear.cgColor
+            }
+        }
+    }
+}
+#endif
